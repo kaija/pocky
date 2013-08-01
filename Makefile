@@ -11,8 +11,10 @@ CFLAGS = -fPIC
 CFLAGS+= -Wall
 CFLAGS+= -DDEBUG
 
-LDFLAGS = -lpocky
+LDFLAGS = $(STATIC_LIB)
 LDFLAGS+= -L.
+
+.PHONY: all clean
 
 all: static shared exec
 

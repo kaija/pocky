@@ -34,5 +34,10 @@ struct pocky_base{
 
 
 struct pocky_base *pocky_init();
-
+void pocky_destroy_base(struct pocky_base *base);
+int pocky_add_ev(int fd,
+                struct pocky_base *base,
+                void (*event_cb)(int fd, short event, void *pdata),
+                void *pdata);
+unsigned int pocky_base_size(struct pocky_base *base);
 #endif

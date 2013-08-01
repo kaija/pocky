@@ -3,18 +3,25 @@
 
 #include "pocky.h"
 
-
+/**
+ * @name    pocky_seeker
+ * @brief   this seeker is used for seek the fd
+ */
 int pocky_seeker(const void *e, const void *key)
 {
     const struct pocky_ev *ev = (struct pocky_ev *)e;
     int target = *(int *)key;
-    if(ev->fd == target || ev->parent_fd ==target)
+    if(ev->fd == target)
     {
         return 1;
     }
     return 0;
 }
 
+/**
+ * @name    pocky_init
+ * @brief   init and return pocky_base data structure
+ */
 struct pocky_base *pocky_init()
 {
     struct pocky_base *base = malloc(sizeof(struct pocky_base));
@@ -28,6 +35,10 @@ struct pocky_base *pocky_init()
     return base;
 }
 
+/**
+ * @name    pocky_new_ev
+ * @brief   create a pocky_ev and init it
+ */
 struct pocky_ev *pocky_new_ev()
 {
     struct pocky_ev *ev;
@@ -45,10 +56,55 @@ struct pocky_ev *pocky_new_ev()
     return ev;
 }
 
-int pocky_add_ev(int fd, struct pocky_base *base, void *pdata)
+/**
+ * @name    pocky_add_ev
+ * @brief   add a fd into the pocky base
+ */
+int pocky_add_ev(int fd,
+                struct pocky_base *base,
+                void (*event_cb)(int fd, short event, void *pdata),
+                void *pdata)
 {
+    struct pocky_ev *ev = malloc(sizeof(struct pocky_ev));
+    if(ev){
+        memset(ev, 0, sizeof(struct pocky_ev));
+        ev->fd = fd;
+        ev->pdata = pdata;
+        ev->event_cb = event_cb;
+        if(list_append(&base->list, (void *)ev) < 0){
+            LOG("list append failure\n");
+        }
+        return 0;
+    }
+    return -1;
+}
 
-    return 0;
+int pocky_accept_ev(int fd, int child_fd,
+                struct pocky_base *base,
+                void (*event_cb)(int fd, short event, void *pdata),
+                void *pdata)
+{
+    struct pocky_ev *ev = malloc(sizeof(struct pocky_ev));
+    if(ev){
+        memset(ev, 0, sizeof(struct pocky_ev));
+        ev->fd = child_fd;
+        ev->parent_fd = fd;
+        ev->pdata = pdata;
+        ev->event_cb = event_cb;
+        if(list_append(&base->list, (void *)ev) < 0){
+            LOG("list append failure\n");
+        }
+        return 0;
+    }
+    return -1;
+}
+
+void *pocky_seek_fd(struct pocky_base *base, int fd)
+{
+    if(base){
+        list_seek(&base->list, &fd);
+    }
+    return NULL;
 }
 
 void pocky_destroy_ev(struct pocky_ev *ev)
@@ -60,7 +116,19 @@ void pocky_destroy_ev(struct pocky_ev *ev)
     }
 }
 
-
+void pocky_destroy_base(struct pocky_base *base)
+{
+    if(base){
+        list_destroy(&base->list);
+        free(base);
+    }
+}
+unsigned int pocky_base_size(struct pocky_base *base){
+    if(base){
+        return list_size(&base->list);
+    }
+    return 0;
+}
 int pocky_dispatch(struct pocky_base *base)
 {
     struct timeval tv;
@@ -80,5 +148,25 @@ int pocky_dispatch(struct pocky_base *base)
             
         }else{
         }
+    }
+}
+
+
+void sample(struct pocky_base *base, int fd)
+{
+    int i;
+    int size = list_size(&base->list);
+    for(i = 0; i < size ; i++){
+        void *tmp = list_get_at(&base->list, i);
+        struct pocky_ev *ev = tmp;
+        printf("ev fd %d parent fd %d\n", ev->fd, ev->parent_fd);
+    }
+}
+
+void sample_trigger(struct pocky_base *base , int fd)
+{
+    struct pocky_ev *ev =  (struct pocky_ev *) list_seek(&base->list, &fd);
+    if(ev){
+        printf("find you \n");
     }
 }
