@@ -1,7 +1,7 @@
 OBJS=pocky.o simclist.o
 EXEC=pocky
 
-
+STRIP=strip
 EXEC_OBJ= main.o
 
 SHARED_LIB=libpocky.so
@@ -14,7 +14,7 @@ CFLAGS+= -DDEBUG
 LDFLAGS = $(STATIC_LIB)
 LDFLAGS+= -L.
 
-.PHONY: all clean
+.PHONY: all clean strip
 
 all: static shared exec
 
@@ -27,6 +27,10 @@ shared: $(OBJS)
 
 exec: $(EXEC_OBJ)
 	$(CC) -o $(EXEC) $(EXEC_OBJ) $(CFLAGS) $(LDFLAGS)
+
+strip:
+	$(STRIP) -R .note -R .comment $(SHARED_LIB)
+	$(STRIP) -R .note -R .comment $(STATIC_LIB)
 
 clean:
 	rm -rf *.o $(EXEC) $(SHARED_LIB) $(STATIC_LIB)

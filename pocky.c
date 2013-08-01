@@ -1,5 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <arpa/inet.h>
+#include <ctype.h>
+#include <sys/un.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <sys/un.h>
+#include <net/if_arp.h>
+#include <net/if.h>
+#include <netdb.h>
+#include <unistd.h>
 
 #include "pocky.h"
 
@@ -27,6 +37,7 @@ struct pocky_base *pocky_init()
     struct pocky_base *base = malloc(sizeof(struct pocky_base));
 	if(base){
 		memset(base, 0, sizeof(struct pocky_base));
+        base->fd_max = 0;
 		list_init(&base->list);
         list_attributes_seeker(&base->list, pocky_seeker);
 	}else{
@@ -56,6 +67,21 @@ struct pocky_ev *pocky_new_ev()
     return ev;
 }
 
+int pocky_add_set(struct pocky_base *base, fd_set *set)
+{
+    if(base){
+        int size = list_size(&base->list);
+        int i;
+        FD_ZERO(set);
+        for(i = 0; i<size; i++){
+            struct pocky_ev *ev = (struct pocky_ev *)list_get_at(&base->list, i);
+            FD_SET(ev->fd, set);
+        }
+        return 0;
+    }
+    return -1;
+}
+
 /**
  * @name    pocky_add_ev
  * @brief   add a fd into the pocky base
@@ -69,6 +95,7 @@ int pocky_add_ev(int fd,
     if(ev){
         memset(ev, 0, sizeof(struct pocky_ev));
         ev->fd = fd;
+        if(fd > base->fd_max) base->fd_max = fd;
         ev->pdata = pdata;
         ev->event_cb = event_cb;
         if(list_append(&base->list, (void *)ev) < 0){
@@ -129,24 +156,54 @@ unsigned int pocky_base_size(struct pocky_base *base){
     }
     return 0;
 }
-int pocky_dispatch(struct pocky_base *base)
+int pocky_fd_isset(struct pocky_base *base, fd_set *set)
+{
+    if(base){
+        int size = list_size(&base->list);
+        int i;
+        for(i = 0; i<size; i++){
+            struct pocky_ev *ev = (struct pocky_ev *)list_get_at(&base->list, i);
+            if(FD_ISSET(ev->fd, set)){
+                return i;
+            }
+        }
+        return -1;
+    }
+    return -1;
+}
+int pocky_dispatch(struct pocky_base *base, int pos)
+{
+    struct pocky_ev *ev = (struct pocky_ev *)list_get_at(&base->list, pos);
+    if(ev){
+        if(ev->event_cb){
+            ev->event_cb(ev->fd, 0, ev->pdata);
+        }
+        return 0;
+    }
+    return -1;
+}
+int pocky_base_loop(struct pocky_base *base)
 {
     struct timeval tv;
     fd_set working_set;
     fd_set backup_set;
-    int fd_max = 0;
     tv.tv_sec = 1;
     tv.tv_usec = 0;
     for(;;)
     {
         int res;
+        pocky_add_set(base, &backup_set);//refresh backup_set
         memcpy(&working_set, &backup_set, sizeof(backup_set));
-        res = select(fd_max, &working_set, NULL, NULL, &tv);
+        res = select(base->fd_max+1, &backup_set, NULL, NULL, NULL);
         if(res == -1){
             LOG("pocky select event error %d\n", res);
         }else if(res == 0){
-            
+            LOG("pocky select timeout\n");
         }else{
+            int pos = pocky_fd_isset(base, &working_set);
+            if(pos > -1){
+                pocky_dispatch(base, pos);
+            }
         }
     }
 }
@@ -169,4 +226,33 @@ void sample_trigger(struct pocky_base *base , int fd)
     if(ev){
         printf("find you \n");
     }
+}
+int pocky_socket_set_reuseaddr(int sk)
+{
+    int on = 1;
+    return setsockopt(sk, SOL_SOCKET, SO_REUSEADDR, (const char *) &on, sizeof(on));
+}
+int pocky_socket_set_nonblock(int sk)
+{
+    unsigned long on = 1;
+    return ioctl(sk, FIONBIO, &on);
+}
+int pocky_udp_socket(int port)
+{
+    int res = 0;
+    int sockfd = 0;
+    struct sockaddr_in serv_addr;
+    sockfd=socket(AF_INET,SOCK_DGRAM,0);
+    bzero(&serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serv_addr.sin_port = htons(port);
+    res = bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+    if(res == -1){
+        close(sockfd);
+        return 0;
+    }
+    pocky_socket_set_reuseaddr(sockfd);
+    pocky_socket_set_nonblock(sockfd);
+    return sockfd;
 }

@@ -27,6 +27,7 @@ struct pocky_ev{
 
 
 struct pocky_base{
+    int         fd_max;
     list_t      list;
 };
 
@@ -40,4 +41,6 @@ int pocky_add_ev(int fd,
                 void (*event_cb)(int fd, short event, void *pdata),
                 void *pdata);
 unsigned int pocky_base_size(struct pocky_base *base);
+int pocky_udp_socket(int port);
+int pocky_base_loop(struct pocky_base *base);
 #endif
