@@ -35,12 +35,12 @@ int pocky_seeker(const void *e, const void *key)
 struct pocky_base *pocky_init()
 {
     struct pocky_base *base = malloc(sizeof(struct pocky_base));
-	if(base){
-		memset(base, 0, sizeof(struct pocky_base));
+    if(base){
+        memset(base, 0, sizeof(struct pocky_base));
         base->fd_max = 0;
-		list_init(&base->list);
+        list_init(&base->list);
         list_attributes_seeker(&base->list, pocky_seeker);
-	}else{
+    }else{
         LOG("pocky initial failure\n");
     }
     return base;
@@ -101,11 +101,21 @@ int pocky_add_ev(int fd,
         if(list_append(&base->list, (void *)ev) < 0){
             LOG("list append failure\n");
         }
+        //TBD reset select working_set
         return 0;
     }
     return -1;
 }
-
+int pocky_del_ev(struct pocky_base *base, int fd)
+{
+    if(base){
+        void *obj = list_seek(&base->list, &fd);
+        list_delete_at(&base->list, list_locate(&base->list, obj));
+        //TBD reset select working_set
+        return 0;
+    }
+    return -1;
+}
 int pocky_accept_ev(int fd, int child_fd,
                 struct pocky_base *base,
                 void (*event_cb)(int fd, short event, void *pdata),
@@ -194,7 +204,7 @@ int pocky_base_loop(struct pocky_base *base)
         int res;
         pocky_add_set(base, &backup_set);//refresh backup_set
         memcpy(&working_set, &backup_set, sizeof(backup_set));
-        res = select(base->fd_max+1, &backup_set, NULL, NULL, NULL);
+        res = select(base->fd_max+1, &working_set, NULL, NULL, NULL);
         if(res == -1){
             LOG("pocky select event error %d\n", res);
         }else if(res == 0){
