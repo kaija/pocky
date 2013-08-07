@@ -16,7 +16,7 @@ LDFLAGS+= -L.
 
 .PHONY: all clean strip
 
-all: static shared exec
+all: static shared exec test
 
 static: $(OBJS)
 	$(AR) rcs $(STATIC_LIB) $(OBJS) 
@@ -28,9 +28,12 @@ shared: $(OBJS)
 exec: $(EXEC_OBJ)
 	$(CC) -o $(EXEC) $(EXEC_OBJ) $(CFLAGS) $(LDFLAGS)
 
+test: upunch.o
+	$(CC) -o upunch upunch.o $(CFLAGS) $(LDFLAGS)
+
 strip:
 	$(STRIP) -R .note -R .comment $(SHARED_LIB)
 	$(STRIP) -R .note -R .comment $(STATIC_LIB)
 
 clean:
-	rm -rf *.o $(EXEC) $(SHARED_LIB) $(STATIC_LIB)
+	rm -rf *.o $(EXEC) $(SHARED_LIB) $(STATIC_LIB) upunch

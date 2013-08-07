@@ -13,6 +13,8 @@
 
 #include "pocky.h"
 
+#define POCKY_SELECT_TIMEOUT 3
+
 /**
  * @name    pocky_seeker
  * @brief   this seeker is used for seek the fd
@@ -101,21 +103,29 @@ int pocky_add_ev(int fd,
         if(list_append(&base->list, (void *)ev) < 0){
             LOG("list append failure\n");
         }
-        //TBD reset select working_set
+        //FIXME reset select working_set
         return 0;
     }
     return -1;
 }
+/**
+ * @name    pocky_del_ev
+ * @brief   del a fd in the pocky base
+ */
 int pocky_del_ev(struct pocky_base *base, int fd)
 {
     if(base){
         void *obj = list_seek(&base->list, &fd);
         list_delete_at(&base->list, list_locate(&base->list, obj));
-        //TBD reset select working_set
+        //FIXME reset select working_set
         return 0;
     }
     return -1;
 }
+/**
+ * @name    pocky_accept_ev
+ * @brief   accept a tcp connection and add into pocky base
+ */
 int pocky_accept_ev(int fd, int child_fd,
                 struct pocky_base *base,
                 void (*event_cb)(int fd, short event, void *pdata),
@@ -136,6 +146,10 @@ int pocky_accept_ev(int fd, int child_fd,
     return -1;
 }
 
+/**
+ * @name    pocky_seek_fd
+ * @brief   seek fd in pocky base
+ */
 void *pocky_seek_fd(struct pocky_base *base, int fd)
 {
     if(base){
@@ -144,28 +158,64 @@ void *pocky_seek_fd(struct pocky_base *base, int fd)
     return NULL;
 }
 
-void pocky_destroy_ev(struct pocky_ev *ev)
+/**
+ * @name    pocky_reg_destroy_cb
+ * @brief   register a callback, called when pocky ev deleted
+ */
+void pocky_reg_destroy_cb(struct pocky_base *base, void (*destroy_cb)(void *pdata))
+{
+    base->destroy_cb = destroy_cb;
+}
+
+/**
+ * @name    pocky_destroy_ev
+ * @brief   destroy pocky ev
+ */
+void pocky_destroy_ev(struct pocky_base *base, struct pocky_ev *ev)
 {
     if(ev){
+        if(base->destroy_cb){ // if user register destroy callback to delete private pdata. call it.
+            base->destroy_cb(ev->pdata);
+        }
         free(ev);
     }else{
         LOG("pocky event destroy error\n");
     }
 }
 
+/**
+ * @name    pocky_destroy_base
+ * @brief   destroy pocky base
+ */
 void pocky_destroy_base(struct pocky_base *base)
 {
+    int i, size;
     if(base){
+        // check list and remove all pocky_ev
+        if((size = list_size(&base->list)) > 0) {
+            for(i=0 ; i<size ;i++){
+                struct pocky_ev *ev = (struct pocky_ev *)list_get_at(&base->list, i);
+                pocky_destroy_ev(base, ev);
+            }
+        }
         list_destroy(&base->list);
         free(base);
     }
 }
+/**
+ * @name    pocky_base_size
+ * @brief   return the size of pocky ev in pocky base
+ */
 unsigned int pocky_base_size(struct pocky_base *base){
     if(base){
         return list_size(&base->list);
     }
     return 0;
 }
+/**
+ * @name    pocky_fd_isset
+ * @brief   check which fd is being set
+ */
 int pocky_fd_isset(struct pocky_base *base, fd_set *set)
 {
     if(base){
@@ -181,6 +231,10 @@ int pocky_fd_isset(struct pocky_base *base, fd_set *set)
     }
     return -1;
 }
+/**
+ * @name    pocky_dispatch
+ * @brief   dispatch a event when fd is set
+ */
 int pocky_dispatch(struct pocky_base *base, int pos)
 {
     struct pocky_ev *ev = (struct pocky_ev *)list_get_at(&base->list, pos);
@@ -192,23 +246,27 @@ int pocky_dispatch(struct pocky_base *base, int pos)
     }
     return -1;
 }
+/**
+ * @name    pocky_base_loop
+ * @brief   start monitor pocky base fd
+ */
 int pocky_base_loop(struct pocky_base *base)
 {
     struct timeval tv;
     fd_set working_set;
     fd_set backup_set;
-    tv.tv_sec = 1;
-    tv.tv_usec = 0;
     for(;;)
     {
         int res;
+        tv.tv_sec = POCKY_SELECT_TIMEOUT; // set select timeout prevent select stuck
+        tv.tv_usec = 0;
         pocky_add_set(base, &backup_set);//refresh backup_set
         memcpy(&working_set, &backup_set, sizeof(backup_set));
-        res = select(base->fd_max+1, &working_set, NULL, NULL, NULL);
+        res = select(base->fd_max+1, &backup_set, NULL, NULL, &tv);
         if(res == -1){
             LOG("pocky select event error %d\n", res);
         }else if(res == 0){
-            LOG("pocky select timeout\n");
+            //LOG("pocky select timeout\n");
         }else{
             int pos = pocky_fd_isset(base, &working_set);
             if(pos > -1){
@@ -265,4 +323,22 @@ int pocky_udp_socket(int port)
     pocky_socket_set_reuseaddr(sockfd);
     pocky_socket_set_nonblock(sockfd);
     return sockfd;
+}
+
+
+
+int pocky_udp_sender(char *addr, int port, char *payload, int len)
+{
+    int sock;
+    struct sockaddr_in serv_addr;
+    sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if(sock < 0) { return -1; }
+    if(payload == NULL) { return -1; }
+    bzero(&serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = inet_addr(addr);
+	serv_addr.sin_port = htons(port);
+    ssize_t n = sendto(sock, payload, len, 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+	close(sock);
+    return n;
 }

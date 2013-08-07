@@ -22,12 +22,14 @@ struct pocky_ev{
     void        *pdata;                 // the private data for callback
     void        (*event_cb)(int fd, short event, void *pdata);
     void        (*accept_cb)(int fd, short event, void *pdata);
+
 };
 
 
 
 struct pocky_base{
     int         fd_max;
+    void        (*destroy_cb)(void *pdata); 	//callback function when pocky_ev destroyed
     list_t      list;
 };
 
@@ -42,5 +44,7 @@ int pocky_add_ev(int fd,
                 void *pdata);
 unsigned int pocky_base_size(struct pocky_base *base);
 int pocky_udp_socket(int port);
+int pocky_del_ev(struct pocky_base *base, int fd);
 int pocky_base_loop(struct pocky_base *base);
+int pocky_udp_sender(char *addr, int port, char *payload, int len);
 #endif
