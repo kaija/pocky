@@ -9,7 +9,7 @@ int main()
         sprintf(buf, "packet count %d\n", i);
         i++;
 		printf("%s send\n", buf);
-        printf("return %d\n",pocky_udp_sender("127.0.0.1", 6000, buf, strlen(buf)));
+        printf("return %d\n",pocky_udp_sender("127.0.0.1", 9000, buf, strlen(buf)));
     }
     return 0;
 }

@@ -13,6 +13,7 @@ CFLAGS+= -DDEBUG
 
 LDFLAGS = $(STATIC_LIB)
 LDFLAGS+= -L.
+LDFLAGS+= -lpthread
 
 .PHONY: all clean strip
 

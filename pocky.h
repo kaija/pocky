@@ -7,7 +7,8 @@
 
 #include "simclist.h"
 
-#define     PK_NAME_LEN 16
+#define     PK_NAME_LEN     16
+#define     PK_CTRL_PORT    9999
 
 #ifdef DEBUG
 #define LOG(fmt,args...) printf("[%s:%d]  "fmt,__FILE__,__LINE__,##args)
@@ -29,6 +30,9 @@ struct pocky_ev{
 
 struct pocky_base{
     int         fd_max;
+    int         ctrl_sk;
+    int         ctrl_port;
+    int         working;
     void        (*destroy_cb)(void *pdata); 	//callback function when pocky_ev destroyed
     list_t      list;
 };

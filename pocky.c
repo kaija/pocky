@@ -13,7 +13,12 @@
 
 #include "pocky.h"
 
-#define POCKY_SELECT_TIMEOUT 3
+#define POCKY_SELECT_TIMEOUT    3
+#define POCKY_CTRL_PAYLOAD      128
+
+#define POCKY_LOCALHOST         "127.0.0.1"
+
+#define POCKY_RESET             "reset"
 
 /**
  * @name    pocky_seeker
@@ -42,6 +47,13 @@ struct pocky_base *pocky_init()
         base->fd_max = 0;
         list_init(&base->list);
         list_attributes_seeker(&base->list, pocky_seeker);
+        int port = PK_CTRL_PORT, sk = 0;
+        while((sk = pocky_udp_socket(port)) < 0){
+            port ++;
+        }
+        //LOG("create port %d for control socket\n", port);
+        base->ctrl_port = port;
+        base->ctrl_sk = sk;
     }else{
         LOG("pocky initial failure\n");
     }
@@ -75,6 +87,10 @@ int pocky_add_set(struct pocky_base *base, fd_set *set)
         int size = list_size(&base->list);
         int i;
         FD_ZERO(set);
+        if(base->ctrl_sk > 0){
+            FD_SET(base->ctrl_sk, set);
+            if(base->ctrl_sk > base->fd_max) base->fd_max = base->ctrl_sk;
+        }
         for(i = 0; i<size; i++){
             struct pocky_ev *ev = (struct pocky_ev *)list_get_at(&base->list, i);
             FD_SET(ev->fd, set);
@@ -103,7 +119,11 @@ int pocky_add_ev(int fd,
         if(list_append(&base->list, (void *)ev) < 0){
             LOG("list append failure\n");
         }
-        //FIXME reset select working_set
+        //LOG("add event success\n");
+        if(base->working == 1){
+            //LOG("notify event loop %d\n", base->ctrl_port);
+            pocky_udp_sender(POCKY_LOCALHOST, base->ctrl_port, POCKY_RESET, strlen(POCKY_RESET));
+        }
         return 0;
     }
     return -1;
@@ -117,7 +137,9 @@ int pocky_del_ev(struct pocky_base *base, int fd)
     if(base){
         void *obj = list_seek(&base->list, &fd);
         list_delete_at(&base->list, list_locate(&base->list, obj));
-        //FIXME reset select working_set
+        if(base->working == 1){
+            pocky_udp_sender(POCKY_LOCALHOST, base->ctrl_port, POCKY_RESET, strlen(POCKY_RESET));
+        }
         return 0;
     }
     return -1;
@@ -246,6 +268,15 @@ int pocky_dispatch(struct pocky_base *base, int pos)
     }
     return -1;
 }
+
+void pocky_clear_socket(int fd)
+{
+    socklen_t len;
+    struct sockaddr_in cliaddr;
+    char buf[POCKY_CTRL_PAYLOAD];
+    recvfrom(fd, buf, POCKY_CTRL_PAYLOAD, 0, (struct sockaddr *)&cliaddr, &len);
+
+}
 /**
  * @name    pocky_base_loop
  * @brief   start monitor pocky base fd
@@ -262,15 +293,21 @@ int pocky_base_loop(struct pocky_base *base)
         tv.tv_usec = 0;
         pocky_add_set(base, &backup_set);//refresh backup_set
         memcpy(&working_set, &backup_set, sizeof(backup_set));
-        res = select(base->fd_max+1, &backup_set, NULL, NULL, &tv);
+        base->working = 1;
+        res = select(base->fd_max+1, &working_set, NULL, NULL, &tv);
         if(res == -1){
             LOG("pocky select event error %d\n", res);
         }else if(res == 0){
             //LOG("pocky select timeout\n");
         }else{
-            int pos = pocky_fd_isset(base, &working_set);
-            if(pos > -1){
-                pocky_dispatch(base, pos);
+            if(FD_ISSET(base->ctrl_sk, &working_set)){
+                //LOG("pocky control socket triggered\n");
+                pocky_clear_socket(base->ctrl_sk);
+            }else{
+                int pos = pocky_fd_isset(base, &working_set);
+                if(pos > -1){
+                    pocky_dispatch(base, pos);
+                }
             }
         }
     }
