@@ -413,8 +413,32 @@ int pocky_udp_sender(char *addr, int port, char *payload, int len)
     bzero(&serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = inet_addr(addr);
-	serv_addr.sin_port = htons(port);
+    serv_addr.sin_port = htons(port);
     ssize_t n = sendto(sock, payload, len, 0, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
-	close(sock);
+    close(sock);
     return n;
+}
+
+int pocky_tcp_socket(int port)
+{
+    if(port < 0 || port > 65534) return -1;
+    int res = 0;
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serv_addr.sin_port = htons(port);
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    res = bind(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+    if(res < 0){
+        fprintf(stderr,"bind socket error\n");
+        close(sock);
+    }
+    pocky_socket_set_reuseaddr(sock);
+    pocky_socket_set_nonblock(sock);
+    res = listen(sock, PK_MAX_CONN);
+    if(res < 0){
+        fprintf(stderr,"listen socket error\n");
+        close(sock);
+    }
+    return sock;
 }
