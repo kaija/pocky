@@ -13,7 +13,7 @@
 
 #include "pocky.h"
 
-#define POCKY_SELECT_TIMEOUT    3
+#define POCKY_SELECT_TIMEOUT    60
 #define POCKY_CTRL_PAYLOAD      128
 
 #define POCKY_LOCALHOST         "127.0.0.1"
@@ -51,7 +51,7 @@ struct pocky_base *pocky_init()
         while((sk = pocky_udp_socket(port)) < 0){
             port ++;
         }
-        //LOG("create port %d for control socket\n", port);
+        LOG("create port %d for control socket\n", port);
         base->ctrl_port = port;
         base->ctrl_sk = sk;
     }else{
@@ -93,6 +93,7 @@ int pocky_add_set(struct pocky_base *base, fd_set *set)
         }
         for(i = 0; i<size; i++){
             struct pocky_ev *ev = (struct pocky_ev *)list_get_at(&base->list, i);
+            //printf("ev->fd %d\n", ev->fd);
             FD_SET(ev->fd, set);
         }
         return 0;
@@ -104,8 +105,8 @@ int pocky_add_set(struct pocky_base *base, fd_set *set)
  * @name    pocky_add_ev
  * @brief   add a fd into the pocky base
  */
-int pocky_add_ev(int fd,
-                struct pocky_base *base,
+int pocky_add_ev(struct pocky_base *base,
+                int fd,
                 void (*event_cb)(int fd, short event, void *pdata),
                 void *pdata)
 {
@@ -124,6 +125,15 @@ int pocky_add_ev(int fd,
             //LOG("notify event loop %d\n", base->ctrl_port);
             pocky_udp_sender(POCKY_LOCALHOST, base->ctrl_port, POCKY_RESET, strlen(POCKY_RESET));
         }
+        return 0;
+    }
+    return -1;
+}
+int pocky_reg_cb(struct pocky_base *base, int fd, void(*destroy_cb)(void *pdata))
+{
+    if(base){
+        struct pocky_ev *ev = (struct pocky_ev *) list_seek(&base->list, &fd);
+        ev->destroy_cb = destroy_cb;
         return 0;
     }
     return -1;
@@ -277,28 +287,57 @@ void pocky_clear_socket(int fd)
     recvfrom(fd, buf, POCKY_CTRL_PAYLOAD, 0, (struct sockaddr *)&cliaddr, &len);
 
 }
+int pocky_reg_timeout_cb(struct pocky_base *base, void(*timeout_cb)(void *pdata))
+{
+    LOG("register timeout callback!\n");
+    if(base){
+        base->timeout_cb = timeout_cb;
+    }
+    return 0;
+}
+
+void pocky_timeout_ev(struct pocky_base *base)
+{
+    if(base->timeout_cb){
+        base->timeout_cb(NULL);
+    }
+}
 /**
  * @name    pocky_base_loop
  * @brief   start monitor pocky base fd
  */
 int pocky_base_loop(struct pocky_base *base)
 {
+    time_t last_poll = 0;
+    time_t timeout = 0;
     struct timeval tv;
     fd_set working_set;
     fd_set backup_set;
+    last_poll = time(NULL);
+    timeout = last_poll + POCKY_SELECT_TIMEOUT;
     for(;;)
     {
         int res;
-        tv.tv_sec = POCKY_SELECT_TIMEOUT; // set select timeout prevent select stuck
+        int timer = timeout - time(NULL);
+        if(timer < 1)
+        {
+            goto timeout_handle;
+        }
+        tv.tv_sec = timer; // set select timeout prevent select stuck
         tv.tv_usec = 0;
         pocky_add_set(base, &backup_set);//refresh backup_set
+        printf("");
         memcpy(&working_set, &backup_set, sizeof(backup_set));
         base->working = 1;
         res = select(base->fd_max+1, &working_set, NULL, NULL, &tv);
         if(res == -1){
-            LOG("pocky select event error %d\n", res);
+            //LOG("pocky select event error %d\n", res);
         }else if(res == 0){
+timeout_handle:
             //LOG("pocky select timeout\n");
+            pocky_timeout_ev(base);
+            last_poll = time(NULL);
+            timeout = last_poll + POCKY_SELECT_TIMEOUT;
         }else{
             if(FD_ISSET(base->ctrl_sk, &working_set)){
                 //LOG("pocky control socket triggered\n");

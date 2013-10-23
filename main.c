@@ -26,7 +26,7 @@ int main()
     pthread_t thread1;
     int a = pocky_udp_socket(6000);
     struct pocky_base *base = pocky_init();
-    pocky_add_ev(a, base, recv_cb, NULL);
+    pocky_add_ev(base, a, recv_cb, NULL);
 
     pthread_create(&thread1, NULL, recer, (void*) base);
     //pthread_join(thread1, NULL);
@@ -34,9 +34,9 @@ int main()
     printf("%u\n",pocky_base_size(base));
     pocky_del_ev(base, a);
     a = pocky_udp_socket(8000);
-    pocky_add_ev(a, base, recv_cb, NULL);
+    pocky_add_ev(base, a, recv_cb, NULL);
     a = pocky_udp_socket(9000);
-    pocky_add_ev(a, base, recv_cb, NULL);
+    pocky_add_ev(base, a, recv_cb, NULL);
     sleep(100);
 	return 0;
 }
